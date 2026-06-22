@@ -20,8 +20,10 @@
 #include <openssl/rand.h>
 #include <openssl/bn.h>
 #include <openssl/rc4.h>
-#include <sys/time.h>
-#include <unistd.h>
+#ifndef _WIN32
+#   include <sys/time.h>
+#   include <unistd.h>
+#endif
 #include <cstdio>
 #include <mutex>
 #include <memory>
@@ -36,6 +38,9 @@ static void init_rand()
 {
     static bool _rand_seeded = false;
     if (!_rand_seeded) {
+#ifdef _WIN32
+        // OpenSSL 3.x on Windows auto-seeds from the OS CSPRNG.
+#else
         struct {
             pid_t   mypid;
             timeval now;
@@ -58,6 +63,7 @@ static void init_rand()
         }
         fclose(urand);
         RAND_seed(&_random, sizeof(_random));
+#endif
         _rand_seeded = true;
     }
 }

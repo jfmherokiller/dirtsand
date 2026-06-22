@@ -18,6 +18,7 @@
 #ifndef _DS_MSGCHANNEL_H
 #define _DS_MSGCHANNEL_H
 
+#include "compat.h"
 #include <queue>
 #include <mutex>
 
@@ -32,16 +33,23 @@ namespace DS
     class MsgChannel
     {
     public:
-        MsgChannel() : m_semaphore(-1) { }
+        MsgChannel() : m_semaphore(DS_INVALID_SOCK)
+#ifdef _WIN32
+                     , m_peerAddr{}
+#endif
+        { }
         ~MsgChannel();
 
-        int fd();
+        ds_socket_t fd();
         void putMessage(int type, void* payload = nullptr);
         FifoMessage getMessage();
         bool hasMessage();
 
     private:
-        int m_semaphore;
+        ds_socket_t m_semaphore;
+#ifdef _WIN32
+        sockaddr_in m_peerAddr;
+#endif
         std::mutex m_mutex;
         std::queue<FifoMessage> m_queue;
     };

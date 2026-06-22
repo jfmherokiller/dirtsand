@@ -19,6 +19,7 @@
 #define _DS_SOCKIO_H
 
 #include "streams.h"
+#include "compat.h"
 #include <stdexcept>
 
 // Don't allow the client to send payloads > 128KB in size
@@ -36,11 +37,11 @@ namespace DS
 
     ST::string SockIpAddress(const SocketHandle sock);
     uint32_t GetAddress4(const char* lookup);
-    int SockFd(const SocketHandle sock);
+    ds_socket_t SockFd(const SocketHandle sock);
 
     void SendBuffer(const SocketHandle sock, const void* buffer, size_t size);
     void SendFile(const SocketHandle sock, const void* buffer, size_t bufsz,
-                  int fd, off_t* offset, size_t fdsz);
+                  int fd, int64_t* offset, size_t fdsz);
     void RecvBuffer(const SocketHandle sock, void* buffer, size_t size);
     size_t PeekSize(const SocketHandle sock);
 
