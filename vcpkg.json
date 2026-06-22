@@ -1,0 +1,20 @@
+{
+  "name" : "dirtsand",
+  "version-string" : "1.0.0",
+  "builtin-baseline" : "40dd49b0c9c7dbd79dc64cad5e82308eae04f67f",
+  "dependencies" : [ {
+    "name" : "replxx"
+  }, {
+    "name" : "string-theory",
+    "version>=" : "3.9"
+  }, {
+    "name" : "libpq",
+    "version>=" : "18.4"
+  }, {
+    "name" : "openssl",
+    "version>=" : "3.6.2"
+  }, {
+    "name" : "zlib",
+    "version>=" : "1.3.2#1"
+  } ]
+}

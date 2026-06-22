@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with dirtsand.  If not, see <http://www.gnu.org/licenses/>.
 
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.5)
 project(dirtsand)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -35,12 +35,23 @@ set(DS_HOOD_POP_THRESHOLD   "20"
 
 option(DS_OU_COMPATIBLE "Enable backwards compatibility with older game clients" OFF)
 
-add_compile_options(-Wall -Wextra -Wno-unused-parameter)
+if(MSVC)
+    # CMake injects /W3 by default; replace it with /W4 in all flag sets so
+    # MSVC doesn't emit D9025 "overriding /W3 with /W4" per translation unit.
+    foreach(flags CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
+                  CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
+        string(REGEX REPLACE "/W[0-4]" "/W4" ${flags} "${${flags}}")
+    endforeach()
+    add_compile_options(/wd4100 /wd4201)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+else()
+    add_compile_options(-Wall -Wextra -Wno-unused-parameter)
+endif()
 
 list(INSERT CMAKE_MODULE_PATH 0 "${CMAKE_SOURCE_DIR}/cmake")
 find_package(PostgreSQL REQUIRED)
 find_package(OpenSSL REQUIRED)
-find_package(Readline REQUIRED)
+find_package(replxx CONFIG REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(string_theory 3.4 REQUIRED)
 find_package(Threads REQUIRED)
@@ -133,6 +144,15 @@ set(dirtsand_SOURCES
 
 add_library(dirtsand STATIC ${dirtsand_SOURCES} ${SDL_SOURCES} ${PlasMOUL_SOURCES})
 
+if(MSVC)
+    # MSVC always writes an import lib named after OUTPUT_NAME ("dirtsand.lib")
+    # alongside the executable.  That collides with the static library of the
+    # same name in the same build directory, causing LNK1149.  Give the static
+    # library a distinct on-disk name to avoid the conflict; the CMake target
+    # name "dirtsand" is unaffected, so all target_link_libraries() calls work.
+    set_target_properties(dirtsand PROPERTIES OUTPUT_NAME "dirtsand_s")
+endif()
+
 target_compile_definitions(dirtsand PRIVATE
     $<$<CONFIG:Debug>:DEBUG>
     $<$<BOOL:${DS_OU_COMPATIBLE}>:DS_OU_COMPATIBLE>
@@ -166,7 +186,8 @@ add_executable(server dsmain.cpp)
 target_link_libraries(server
     PRIVATE
         dirtsand
-        Readline::Readline
+        replxx::replxx
+        $<$<PLATFORM_ID:Windows>:ws2_32>
 )
 set_target_properties(server PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${dirtsand_SOURCE_DIR}/bin"
@@ -195,5 +216,12 @@ include(TidyRules.cmake)
 
 if(ENABLE_TESTS)
     enable_testing()
+    if(WIN32)
+        # clang-tidy in MSVC driver mode disables C++ exceptions regardless of
+        # /EHsc, causing hard parse errors on every throw in string_theory and
+        # streams.h.  Production code is still linted; only the test target is
+        # excluded here.
+        set(CMAKE_CXX_CLANG_TIDY "")
+    endif()
     add_subdirectory(Tests)
 endif()
