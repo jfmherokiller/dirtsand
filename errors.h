@@ -24,7 +24,7 @@
 
 namespace DS
 {
-    __attribute__((noreturn))
+    [[noreturn]]
     inline void AssertionFailure(const char *condition, const char *file, long line)
         noexcept
     {
