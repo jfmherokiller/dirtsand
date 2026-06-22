@@ -25,6 +25,10 @@
 #include <cstring>
 #include <optional>
 
+#ifdef _WIN32
+#   include "compat.h"
+#endif
+
 namespace DS
 {
     class EofException : public std::runtime_error

@@ -21,7 +21,7 @@
 #include <openssl/evp.h>
 #include <cstdlib>
 #include <memory>
-
+#include "compat.h"
 /* Cyan makes their SHA hashes 5 LE dwords instead of 20 bytes, making our
  * lives more difficult and annoying.
  */

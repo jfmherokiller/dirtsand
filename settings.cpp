@@ -111,6 +111,12 @@ bool DS::Settings::LoadFrom(const ST::string& filename)
 
     s_settings.m_settingsPath = filename;
     ssize_t slash = s_settings.m_settingsPath.find_last('/');
+#ifdef _WIN32
+    // Also check for backslashes when a Windows path is passed.
+    ssize_t bslash = s_settings.m_settingsPath.find_last('\\');
+    if (bslash > slash)
+        slash = bslash;
+#endif
     if (slash >= 0)
         s_settings.m_settingsPath = s_settings.m_settingsPath.left(slash);
     else

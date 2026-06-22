@@ -28,56 +28,18 @@
 #include <string_theory/codecs>
 #include <string_theory/stdio>
 #include <openssl/evp.h>
-#include <readline.h>
-#include <history.h>
+#include <replxx.hxx>
 #include <signal.h>
-#include <unistd.h>
 #include <cstdio>
+#ifndef _WIN32
+#   include <unistd.h>
+#else
+#   include <direct.h>
+#endif
 
 #ifdef __GLIBC__
 #include <execinfo.h>
 #endif
-
-static char** dup_strlist(const char* text, const char** strlist, size_t count)
-{
-    char** dupe;
-    if (count == 1) {
-        dupe = reinterpret_cast<char**>(malloc(sizeof(char*) * 2));
-        dupe[0] = strdup(strlist[0]);
-        dupe[1] = nullptr;
-    } else {
-        dupe = reinterpret_cast<char**>(malloc(sizeof(char*) * (count + 2)));
-        dupe[0] = strdup(text);
-        for (size_t i=0; i<count; ++i)
-            dupe[i+1] = strdup(strlist[i]);
-        dupe[count+1] = nullptr;
-    }
-    return dupe;
-}
-
-static char** console_completer(const char* text, int start, int end)
-{
-    static const char* completions[] = {
-        /* Commands */
-        "addacct", "addallplayers", "clients", "commdebug", "globalsdl", "help", "keygen",
-        "modacct", "quit", "restart", "restrict", "welcome",
-        /* Services */
-        "auth", "lobby", "status",
-    };
-
-    rl_attempted_completion_over = true;
-    if (strlen(text) == 0)
-        return dup_strlist(text, completions, sizeof(completions) / sizeof(completions[0]));
-
-    std::vector<const char*> matches;
-    for (size_t i=0; i<sizeof(completions) / sizeof(completions[0]); ++i) {
-        if (strncmp(text, completions[i], strlen(text)) == 0)
-            matches.push_back(completions[i]);
-    }
-    if (matches.size() == 0)
-        return nullptr;
-    return dup_strlist(text, matches.data(), matches.size());
-}
 
 #ifdef __GLIBC__
 static void print_trace(const char* text)
@@ -123,6 +85,24 @@ static void sigh_term(int)
 
 static ST::string get_install_directory()
 {
+#ifdef _WIN32
+    char path[MAX_PATH];
+    DWORD exe_len = GetModuleFileNameA(nullptr, path, MAX_PATH);
+    if (exe_len > 0) {
+        ST::string spath(path);
+        ST_ssize_t slash = spath.find_last('\\');
+        if (slash < 0) slash = spath.find_last('/');
+        if (slash >= 0) {
+            spath = spath.left(slash);
+            if (spath.ends_with("\\bin") || spath.ends_with("/bin"))
+                return spath.left(spath.size() - 4);
+            return spath;
+        }
+    }
+    if (_getcwd(path, sizeof(path)))
+        return ST::string(path);
+    return ST_LITERAL(".");
+#else
     // Assume we're running as <install_directory>/bin/dirtsand
     char path[PATH_MAX];
     ssize_t exe_len = readlink("/proc/self/exe", path, sizeof(path));
@@ -143,6 +123,7 @@ static ST::string get_install_directory()
 
     // The OS is returning nonsense -- just use "."
     return ST_LITERAL(".");
+#endif
 }
 
 static void do_help()
@@ -191,10 +172,20 @@ static void generate_keys()
 int main(int argc, char* argv[])
 {
     // refuse to run as root
+#ifndef _WIN32
     if (geteuid() == 0) {
         fputs("Do not run this server as root!\n", stderr);
         return 1;
     }
+#endif
+
+#ifdef _WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        fputs("FATAL: WSAStartup failed\n", stderr);
+        return 1;
+    }
+#endif
 
     OpenSSL_add_all_digests();
 
@@ -237,8 +228,10 @@ int main(int argc, char* argv[])
     // Close the read pipe to gracefully trigger shutdown
     signal(SIGTERM, &sigh_term);
 
+#ifndef _WIN32
     // Ignore sigpipe and force send() to return EPIPE
     signal(SIGPIPE, SIG_IGN);
+#endif
 
     SDL::DescriptorDb::LoadDescriptors(DS::Settings::SdlPath());
     DS::FileServer_Init();
@@ -252,10 +245,24 @@ int main(int argc, char* argv[])
     char rl_prompt[32];
     snprintf(rl_prompt, 32, "ds-%u> ", DS::Settings::BuildId());
 
-    char* cmdbuf = nullptr;
-    rl_attempted_completion_function = &console_completer;
+    replxx::Replxx rx;
+    rx.set_completion_callback([](std::string const& input, int& /*context_len*/) {
+        static const char* const commands[] = {
+            "addacct", "addallplayers", "clients", "commdebug", "globalsdl", "help", "keygen",
+            "modacct", "quit", "restart", "restrict", "welcome",
+            "auth", "lobby", "status",
+        };
+        replxx::Replxx::completions_t completions;
+        for (const char* cmd : commands) {
+            if (input.empty() || strncmp(input.c_str(), cmd, input.size()) == 0)
+                completions.emplace_back(cmd);
+        }
+        return completions;
+    });
+
+    const char* cmdbuf;
     for ( ;; ) {
-        cmdbuf = readline(rl_prompt);
+        cmdbuf = rx.input(rl_prompt);
         if (!cmdbuf) {
             // Get us out of the prompt
             fputc('\n', stdout);
@@ -264,15 +271,12 @@ int main(int argc, char* argv[])
 
         ST::string cmdline = ST::string(cmdbuf).before_first('#').trim();
         std::vector<ST::string> args = cmdline.tokenize();
-        if (args.size() == 0) {
-            free(cmdbuf);
+        if (args.size() == 0)
             continue;
-        }
-        add_history(cmdbuf);
+        rx.history_add(cmdbuf);
         ST::string arg_str;
         if (cmdline.size() > args.front().size() + 1)
             arg_str = ST::string(cmdbuf + args.front().size() + 1);
-        free(cmdbuf);
 
         if (args[0] == "quit") {
             break;
@@ -427,5 +431,8 @@ int main(int argc, char* argv[])
     DS::GameServer_Shutdown();
     DS::AuthServer_Shutdown();
     DS::FileServer_Shutdown();
+#ifdef _WIN32
+    WSACleanup();
+#endif
     return 0;
 }

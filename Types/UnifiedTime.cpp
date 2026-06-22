@@ -16,7 +16,11 @@
  ******************************************************************************/
 
 #include "UnifiedTime.h"
-#include <sys/time.h>
+#ifdef _WIN32
+#   include <chrono>
+#else
+#   include <sys/time.h>
+#endif
 
 void DS::UnifiedTime::read(DS::Stream* stream)
 {
@@ -32,8 +36,16 @@ void DS::UnifiedTime::write(DS::Stream* stream) const
 
 void DS::UnifiedTime::setNow()
 {
+#ifdef _WIN32
+    auto tp = std::chrono::system_clock::now().time_since_epoch();
+    m_secs   = static_cast<uint32_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(tp).count());
+    m_micros = static_cast<uint32_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(tp).count() % 1000000);
+#else
     timeval now;
     gettimeofday(&now, nullptr);
     m_secs = now.tv_sec;
     m_micros = now.tv_usec;
+#endif
 }

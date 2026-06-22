@@ -25,9 +25,15 @@
 
 #include <string_theory/format>
 #include <openssl/rand.h>
-#include <poll.h>
-#include <sys/stat.h>
-#include <sys/types.h>
+#ifndef _WIN32
+#   include <poll.h>
+#   include <sys/stat.h>
+#   include <sys/types.h>
+#else
+#   include <sys/stat.h>
+#   define poll WSAPoll
+#   define stat  _stat64
+#endif
 
 #define NODE_SIZE_MAX (4 * 1024 * 1024)
 

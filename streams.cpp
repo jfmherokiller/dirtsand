@@ -18,9 +18,17 @@
 #include "streams.h"
 #include "errors.h"
 #include <string_theory/codecs>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#ifdef _WIN32
+#   include <sys/stat.h>   /* MSVC ships this; provides _stat64 / _fstat64 */
+#   include <io.h>         /* _fileno */
+#   define fstat  _fstat64
+#   define fileno _fileno
+#   define stat   _stat64
+#else
+#   include <sys/types.h>
+#   include <sys/stat.h>
+#   include <unistd.h>
+#endif
 
 bool DS::Stream::readLine(void* buffer, size_t count)
 {

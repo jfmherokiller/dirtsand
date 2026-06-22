@@ -25,8 +25,20 @@
 #include <mutex>
 #include <chrono>
 #include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
+#ifndef _WIN32
+#   include <unistd.h>
+#   include <sys/stat.h>
+#else
+#   include <io.h>
+#   include <sys/stat.h>
+#   ifndef O_RDONLY
+#       define O_RDONLY (_O_RDONLY | _O_BINARY)
+#   endif
+#   define open(p, f)  _open(p, f)
+#   define close(fd)   _close(fd)
+#   define fstat       _fstat64
+#   define stat        _stat64
+#endif
 
 struct FileServer_Private
 {
@@ -216,7 +228,7 @@ void cb_downloadStart(FileServer_Private& client)
     }
 
     struct stat stat_buf;
-    off_t filepos = 0;
+    int64_t filepos = 0;
     if (fstat(fd, &stat_buf) < 0) {
         ST::printf(stderr, "[File] Could not stat file {}\n[File] Requested by {}\n",
                    filename, DS::SockIpAddress(client.m_sock));
@@ -239,7 +251,7 @@ void cb_downloadStart(FileServer_Private& client)
     // to this is that the connection becomes unresponsive to all other traffic when a download
     // is in progress.
     while (filepos < stat_buf.st_size) {
-        off_t remsz = stat_buf.st_size - filepos;
+        int64_t remsz = stat_buf.st_size - filepos;
         uint32_t chunksz = remsz > CHUNK_SIZE ? CHUNK_SIZE : (uint32_t)remsz;
 
         START_REPLY(e_FileToCli_FileDownloadReply);

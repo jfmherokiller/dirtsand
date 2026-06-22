@@ -22,7 +22,28 @@
 #include <catch2/catch.hpp>
 #include <string_theory/format>
 
-#include <unistd.h>
+#ifndef _WIN32
+#   include <unistd.h>
+#else
+#   include <io.h>
+#   include <direct.h>
+#   define unlink  _unlink
+#   define rmdir   _rmdir
+static char* mkdtemp(char* tmpl)
+{
+    char* p = _tempnam(nullptr, "DST");
+    if (!p)
+        return nullptr;
+    if (_mkdir(p) != 0) {
+        free(p);
+        return nullptr;
+    }
+    strncpy(tmpl, p, 255);
+    tmpl[255] = '\0';
+    free(p);
+    return tmpl;
+}
+#endif
 
 #include "SDL/DescriptorDb.h"
 #include "SDL/StateInfo.h"
