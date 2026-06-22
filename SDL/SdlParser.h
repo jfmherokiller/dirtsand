@@ -19,7 +19,6 @@
 #define _SDL_PARSER_H
 
 #include "DescriptorDb.h"
-#include "strings.h"
 #include <list>
 
 namespace DS

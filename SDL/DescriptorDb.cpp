@@ -19,14 +19,9 @@
 #include "SdlParser.h"
 #include "errors.h"
 #include <string_theory/format>
-#include <unistd.h>
-#include <dirent.h>
-#include <sys/stat.h>
-
-static int sel_sdl(const dirent* de)
-{
-    return strcmp(strrchr(de->d_name, '.'), ".sdl") == 0;
-}
+#include <filesystem>
+#include <algorithm>
+#include <vector>
 
 SDL::DescriptorDb::descmap_t SDL::DescriptorDb::s_descriptors;
 
@@ -119,25 +114,28 @@ bool SDL::DescriptorDb::ForLatestDescriptors(descfunc_t functor)
 
 bool SDL::DescriptorDb::ForDescriptorFiles(const char* sdlpath, filefunc_t functor)
 {
-    dirent** dirls;
-    int count = scandir(sdlpath, &dirls, &sel_sdl, &alphasort);
-
-    DS_ASSERT(count > 0);
-    if (count == 0)
-        fputs("[SDL] Warning: No SDL descriptors found!\n", stderr);
-    if (count < 0)
-        throw DS::SystemError("[SDL] Error scanning for SDL files", strerror(errno));
-
-    bool retval = true;
-    for (int i = 0; i < count; i++) {
-        if (!functor(ST::format("{}/{}", sdlpath, dirls[i]->d_name))) {
-            retval = false;
-            break;
+    namespace fs = std::filesystem;
+    std::vector<fs::path> sdlfiles;
+    try {
+        for (const auto& entry : fs::directory_iterator(sdlpath)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".sdl")
+                sdlfiles.push_back(entry.path());
         }
+    } catch (const fs::filesystem_error& e) {
+        throw DS::SystemError("[SDL] Error scanning for SDL files", e.what());
     }
-
-    for (int i = 0; i < count; i++)
-        free(dirls[i]);
-    free(dirls);
-    return retval;
+    DS_ASSERT(!sdlfiles.empty());
+    if (sdlfiles.empty()) {
+        fputs("[SDL] Warning: No SDL descriptors found!\n", stderr);
+        return true;
+    }
+    std::sort(sdlfiles.begin(), sdlfiles.end());
+    for (const auto& p : sdlfiles) {
+        // generic_string() uses '/' separators on every platform. Native string()
+        // would yield backslashes on Windows, which breaks downstream code that
+        // splits on '/' (e.g. AuthServer's path.after_last('/') for SDL files).
+        if (!functor(ST::string(p.generic_string().c_str())))
+            return false;
+    }
+    return true;
 }

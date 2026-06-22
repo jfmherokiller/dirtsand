@@ -19,7 +19,6 @@
 #define _MOUL_AGELINKSTRUCT_H
 
 #include "creatable.h"
-#include "strings.h"
 #include "Types/BitVector.h"
 #include "Types/Uuid.h"
 

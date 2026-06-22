@@ -19,9 +19,15 @@
 #include "settings.h"
 #include "errors.h"
 #include <string_theory/format>
-#include <dirent.h>
-#include <sys/stat.h>
-#include <poll.h>
+#include <filesystem>
+#include <algorithm>
+#include <vector>
+#ifndef _WIN32
+#   include <sys/stat.h>
+#   include <poll.h>
+#else
+#   define poll WSAPoll
+#endif
 #include <chrono>
 #include <functional>
 
@@ -312,11 +318,6 @@ void wk_gameWorker(DS::SocketHandle sockp)
     DS::FreeSock(client.m_sock);
 }
 
-static int sel_age(const dirent* de)
-{
-    return strcmp(strrchr(de->d_name, '.'), ".age") == 0;
-}
-
 Game_AgeInfo age_parse(FILE* stream)
 {
     char lnbuffer[4096];
@@ -352,39 +353,43 @@ Game_AgeInfo age_parse(FILE* stream)
 
 void DS::GameServer_Init()
 {
-    dirent** dirls;
-    int count = scandir(DS::Settings::AgePath(), &dirls, &sel_age, &alphasort);
-    if (count < 0) {
-        ST::printf(stderr, "[Game] Error reading age descriptors: {}\n", strerror(errno));
-    } else if (count == 0) {
-        fputs("[Game] Warning: No age descriptors found!\n", stderr);
-        free(dirls);
-    } else {
-        for (int i=0; i<count; ++i) {
-            ST::string filename = ST::format("{}/{}", DS::Settings::AgePath(), dirls[i]->d_name);
-            std::unique_ptr<FILE, std::function<int (FILE*)>> ageFile(fopen(filename.c_str(), "r"), &fclose);
-            if (ageFile) {
-                char magic[12];
-                if (fread(magic, 1, 12, ageFile.get()) != 12) {
-                    ST::printf(stderr, "[Game] Error: File {} is empty\n", filename);
-                    break;
-                }
-                if (memcmp(magic, "whatdoyousee", 12) == 0 || memcmp(magic, "notthedroids", 12) == 0
-                    || memcmp(magic, "BriceIsSmart", 12) == 0) {
-                    fputs("[Game] Error: Please decrypt your .age files before using!\n", stderr);
-                    break;
-                }
-                fseek(ageFile.get(), 0, SEEK_SET);
-
-                ST::string ageName = dirls[i]->d_name;
-                ageName = ageName.before_first(".age");
-                Game_AgeInfo age = age_parse(ageFile.get());
-                if (age.m_seqPrefix >= 0)
-                    s_ages[ageName] = age;
-            }
-            free(dirls[i]);
+    namespace fs = std::filesystem;
+    std::vector<fs::path> agefiles;
+    try {
+        for (const auto& entry : fs::directory_iterator(DS::Settings::AgePath())) {
+            if (entry.is_regular_file() && entry.path().extension() == ".age")
+                agefiles.push_back(entry.path());
         }
-        free(dirls);
+    } catch (const fs::filesystem_error& e) {
+        ST::printf(stderr, "[Game] Error reading age descriptors: {}\n", e.what());
+        return;
+    }
+    if (agefiles.empty()) {
+        fputs("[Game] Warning: No age descriptors found!\n", stderr);
+        return;
+    }
+    std::sort(agefiles.begin(), agefiles.end());
+    for (const auto& p : agefiles) {
+        ST::string filename = ST::string(p.generic_string().c_str());
+        std::unique_ptr<FILE, std::function<int (FILE*)>> ageFile(fopen(filename.c_str(), "r"), &fclose);
+        if (ageFile) {
+            char magic[12];
+            if (fread(magic, 1, 12, ageFile.get()) != 12) {
+                ST::printf(stderr, "[Game] Error: File {} is empty\n", filename);
+                break;
+            }
+            if (memcmp(magic, "whatdoyousee", 12) == 0 || memcmp(magic, "notthedroids", 12) == 0
+                || memcmp(magic, "BriceIsSmart", 12) == 0) {
+                fputs("[Game] Error: Please decrypt your .age files before using!\n", stderr);
+                break;
+            }
+            fseek(ageFile.get(), 0, SEEK_SET);
+
+            ST::string ageName = ST::string(p.stem().generic_string().c_str());
+            Game_AgeInfo age = age_parse(ageFile.get());
+            if (age.m_seqPrefix >= 0)
+                s_ages[ageName] = age;
+        }
     }
 }
 
